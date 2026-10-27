@@ -128,8 +128,8 @@ The trained weights file `outputs/detector.pt` is needed by the web app. If it i
 
 ## Authors
 
-- Sameer Sunu Daniel (URK24CS7034)
-- Suraj Nair (URK24CS7082)
+- Sameer Sunu Daniel 
+- Suraj Nair 
 
 Faculty in charge: Dr. D. Darling Jemima, Division of Artificial Intelligence and Machine Learning, Karunya Institute of Technology and Sciences.
 
