@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --table:#e5eae7;      /* light-table surface */
+    --mount:#f8f9f6;      /* slide mount / panel */
+    --ink:#111b1a;
+    --muted:#566663;
+    --line:#c3cdc9;
+    --window:#0e1514;     /* the dark scanning window */
+    --window-ink:#e8efec;
+    --beam:#6a7dff;
+    --fake:#b72f1b; --real:#17714a; --unsure:#7a5f00;
+    --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+    --body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  }
+  #root{--vc:var(--ink);--vd:var(--beam)}
+  #root[data-verdict=fake]{--vc:var(--fake);--vd:#ff7a66}
+  #root[data-verdict=real]{--vc:var(--real);--vd:#4fd18f}
+  #root[data-verdict=inconclusive]{--vc:var(--unsure);--vd:#e6c14f}
+  #root[data-verdict=noface]{--vc:var(--muted);--vd:#9aa8a5}
+  #root[data-noface="1"] .gauge,#root[data-noface="1"] .zlabels,#root[data-noface="1"] .legend{display:none}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--table);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  main{max-width:1040px;margin:0 auto;padding:36px 20px 64px}
+  :focus-visible{outline:3px solid #2a3dff;outline-offset:3px}
+
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:28px}
+  h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.4vw,44px);line-height:1.05;margin:0 0 6px;letter-spacing:-.01em}
+  .lede{margin:0;color:var(--muted);max-width:52ch;text-wrap:balance}
+  .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+  .status i{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  .status.ok i{background:var(--real)} .status.demo i{background:var(--unsure)}
+
+  .banner{margin:0 0 20px;padding:12px 16px;border-left:4px solid var(--unsure);background:#f3ecd2;font-size:14px}
+  .banner[hidden]{display:none}
+
+  .bench{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:start}
+  @media(max-width:780px){.bench{grid-template-columns:1fr}}
+
+  /* ---------- the slide ---------- */
+  .mount{background:var(--mount);padding:14px;border-radius:4px;box-shadow:0 1px 0 var(--line)}
+  .window{position:relative;aspect-ratio:1/1;width:100%;background:var(--window);color:var(--window-ink);overflow:hidden;border-radius:2px;cursor:pointer}
+  .window img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none}
+  [data-state=scanning] .window img,[data-state=done] .window img{display:block}
+  .window.drag{outline:3px solid var(--beam);outline-offset:-3px}
+
+  .drophint{position:absolute;inset:16px;border:1.5px dashed rgba(232,239,236,.32);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:6px}
+  .drophint strong{font-family:var(--display);font-size:22px;font-weight:600}
+  .drophint span{color:rgba(232,239,236,.7);font-size:15px;max-width:30ch}
+  .drophint svg{margin-bottom:8px;opacity:.85}
+  [data-state=scanning] .drophint,[data-state=done] .drophint{display:none}
+
+  .mesh,.trail,.beam{position:absolute;pointer-events:none;opacity:0}
+  .mesh{inset:0;background-image:linear-gradient(rgba(106,125,255,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(106,125,255,.16) 1px,transparent 1px);background-size:12.5% 12.5%}
+  .beam{left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--beam) 18%,#c9d0ff 50%,var(--beam) 82%,transparent);box-shadow:0 0 18px 5px rgba(106,125,255,.5)}
+  .trail{left:0;right:0;top:-90px;height:90px;background:linear-gradient(to bottom,transparent,rgba(106,125,255,.22))}
+  [data-state=scanning] .mesh{opacity:1}
+  [data-state=scanning] .beam{opacity:1;animation:sweep 1.5s cubic-bezier(.45,.05,.55,.95) infinite}
+  [data-state=scanning] .trail{opacity:1;animation:sweepTrail 1.5s cubic-bezier(.45,.05,.55,.95) infinite}
+  @keyframes sweep{from{top:0}to{top:calc(100% - 2px)}}
+  @keyframes sweepTrail{from{top:-90px}to{top:calc(100% - 92px)}}
+
+  .brks{position:absolute;inset:12px;pointer-events:none;opacity:0}
+  .brks span{position:absolute;width:26px;height:26px;border:3px solid var(--vd)}
+  .brks .a{top:0;left:0;border-right:0;border-bottom:0}
+  .brks .b{top:0;right:0;border-left:0;border-bottom:0}
+  .brks .c{bottom:0;left:0;border-right:0;border-top:0}
+  .brks .d{bottom:0;right:0;border-left:0;border-top:0}
+  [data-state=scanning] .brks,[data-state=done] .brks{opacity:1}
+  [data-state=scanning] .brks{animation:lock .55s ease-out both}
+  @keyframes lock{from{opacity:0;transform:scale(1.14)}to{opacity:1;transform:scale(1)}}
+
+  .caption{position:absolute;left:0;right:0;bottom:0;padding:34px 46px 16px;display:flex;justify-content:space-between;gap:12px;font-size:13px;color:#fff;background:linear-gradient(to top,rgba(8,12,12,.78),rgba(8,12,12,0));opacity:0}
+  [data-state=scanning] .caption,[data-state=done] .caption{opacity:1}
+  .caption #fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .caption #phase{flex:none}
+
+  /* ---------- the readout ---------- */
+  .readout{background:var(--mount);border-radius:4px;box-shadow:0 1px 0 var(--line);padding:28px;min-height:420px;display:flex;flex-direction:column}
+  .readout h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0 0 8px}
+  .state{display:none;flex-direction:column;flex:1}
+  [data-state=idle] .s-idle,[data-state=scanning] .s-scan,[data-state=done] .s-done,[data-state=error] .s-err{display:flex}
+  .s-idle p{margin:0 0 12px;color:var(--muted);max-width:44ch}
+
+  .steps{list-style:none;margin:6px 0 0;padding:0}
+  .steps li{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line);color:var(--muted);transition:color .25s}
+  .steps li:last-child{border-bottom:1px solid var(--line)}
+  .steps li::before{content:"";width:10px;height:10px;border-radius:50%;border:2px solid var(--line);flex:none;transition:all .25s}
+  .steps li.on{color:var(--ink)}
+  .steps li.on::before{border-color:#2a3dff;background:#2a3dff}
+  .steps li.past::before{border-color:var(--ink);background:var(--ink)}
+
+  .verdict{display:flex;align-items:center;gap:14px;margin:0 0 6px;flex-wrap:wrap;font-family:var(--display);font-weight:700;font-size:clamp(34px,5.2vw,54px);line-height:1;letter-spacing:-.015em;color:var(--vc)}
+  .mark{flex:none;width:.85em;height:.85em;display:block}
+  .mark svg{width:100%;height:100%;display:none;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+  #root[data-verdict=fake] .mark .i-fake,#root[data-verdict=real] .mark .i-real,#root[data-verdict=inconclusive] .mark .i-unsure,#root[data-verdict=noface] .mark .i-noface{display:block}
+  .why{margin:0 0 24px;color:var(--muted);max-width:46ch}
+
+  .gauge{position:relative;height:14px;display:flex;border-radius:2px;overflow:visible;margin:22px 0 6px}
+  .gauge .z{height:100%}
+  .z1{background:#b9ddc9}.z2{background:#e6d9a3}.z3{background:#efb7ac}
+  .pin,.ring{position:absolute;top:50%;left:50%;transition:left .9s cubic-bezier(.2,.8,.2,1)}
+  .pin{width:4px;height:30px;background:var(--ink);transform:translate(-50%,-50%);border-radius:2px}
+  .ring{width:16px;height:16px;border:3px solid var(--ink);background:var(--mount);border-radius:50%;transform:translate(-50%,-50%)}
+  .zlabels{display:flex;font-size:13px;color:var(--muted)}
+  .zlabels span{text-align:center}
+  .legend{margin:10px 0 22px;font-size:13px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+  .legend b{display:inline-block;vertical-align:middle;margin-right:6px}
+  .legend .k1{width:4px;height:14px;background:var(--ink);border-radius:2px}
+  .legend .k2{width:12px;height:12px;border:3px solid var(--ink);border-radius:50%}
+
+  .facts{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start;padding-top:18px;border-top:1px solid var(--line)}
+  .crop{width:128px}
+  .crop canvas{display:block;width:128px;height:128px;image-rendering:pixelated;background:var(--window);border-radius:2px}
+  .crop small{display:block;margin-top:6px;font-size:13px;color:var(--muted);line-height:1.35}
+  dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:15px}
+  dt{color:var(--muted)} dd{margin:0}
+  @media(max-width:520px){.facts{grid-template-columns:1fr}.readout{padding:22px}}
+  .notes{margin:16px 0 0;padding:0 0 0 18px;font-size:14px;color:var(--unsure)}
+  .notes:empty{display:none}
+  .caveat{margin:auto 0 0;padding-top:18px;font-size:14px;color:var(--muted)}
+  button{font:inherit;font-weight:600;background:var(--ink);color:var(--mount);border:0;border-radius:3px;padding:10px 18px;cursor:pointer;margin-top:16px;align-self:flex-start}
+  #root[data-noface="1"] .caveat{display:none}
+  .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;align-self:flex-start}
+  .actions button{margin-top:0}
+  button.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+  button.ghost:hover{background:#e3e9e6}
+  button:hover{background:#243433}
+  button:active{transform:translateY(1px)}
+  .err{margin:0;color:var(--fake);max-width:44ch}
+
+  /* ---------- reliability ---------- */
+  .reliab{margin-top:44px;padding-top:28px;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}
+  @media(max-width:780px){.reliab{grid-template-columns:1fr}}
+  .reliab h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0 0 10px}
+  .reliab p,.reliab li{color:var(--muted);font-size:15px}
+  .reliab ul{margin:0;padding-left:18px}
+  table{border-collapse:collapse;width:100%;font-size:15px}
+  td{padding:9px 0;border-bottom:1px solid var(--line);vertical-align:top}
+  td:last-child{text-align:right;font-family:var(--display);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:16px}
+  tr.bad td:last-child{color:var(--fake)}
+  .fine{margin-top:10px;font-size:13px}
+
+  @media (prefers-reduced-motion:reduce){
+    [data-state=scanning] .beam,[data-state=scanning] .trail,[data-state=scanning] .brks{animation:none}
+    [data-state=scanning] .beam{top:50%} [data-state=scanning] .trail{top:calc(50% - 90px)}
+    .pin,.ring{transition:none}
+  }
+</style>
+</head>
+<body>
+<main id="root" data-state="idle" data-verdict="">
+  <header>
+    <div>
+      <h1>Face Check</h1>
+      <p class="lede">Is this face a real photo or AI-generated? Drop an image in to scan it.</p>
+    </div>
+    <div class="status" id="status"><i></i><span>Connecting to the model</span></div>
+  </header>
+
+  <p class="banner" id="banner" role="status" hidden></p>
+
+  <div class="bench">
+    <div class="mount">
+      <div class="window" id="frame" tabindex="0" role="button" aria-label="Choose an image to scan, or drop one here">
+        <div class="drophint">
+          <svg width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="6" width="32" height="32" rx="2"/><circle cx="22" cy="19" r="5"/><path d="M12 35c1.5-6 5.5-8 10-8s8.5 2 10 8"/></svg>
+          <strong>Drop a face photo here</strong>
+          <span>or click to browse. You can also paste an image with Ctrl+V.</span>
+        </div>
+        <img id="preview" alt="The image being scanned">
+        <div class="mesh"></div><div class="trail"></div><div class="beam"></div>
+        <div class="brks"><span class="a"></span><span class="b"></span><span class="c"></span><span class="d"></span></div>
+        <div class="caption"><span id="fname"></span><span id="phase">Scanning</span></div>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+
+    <section class="readout" aria-live="polite" aria-label="Scan result">
+      <div class="state s-idle">
+        <h2>Nothing scanned yet</h2>
+        <p>When you drop an image, you'll get a verdict, a score, and a look at the exact crop the model examined.</p>
+        <p>Close, front-facing face photos work best. Group shots and full scenes confuse a model that only learned from cropped faces.</p>
+        <p>A "real" result only means the model did not spot a StyleGAN fake. It does not prove a photo is genuine, and it cannot recognise other AI generators.</p>
+      </div>
+
+      <div class="state s-scan">
+        <h2>Scanning</h2>
+        <ol class="steps" id="steps">
+          <li>Cropping the centre of the image to 64 x 64 pixels</li>
+          <li>Scoring the crop with the CNN discriminator</li>
+          <li>Scoring it again after JPEG compression</li>
+        </ol>
+      </div>
+
+      <div class="state s-done">
+        <p class="verdict"><span class="mark" aria-hidden="true"><svg class="i-real" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.5"/><path d="M9.5 16.5l4.5 4.5 8.5-9.5"/></svg><svg class="i-fake" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.5"/><path d="M10.5 10.5l11 11M21.5 10.5l-11 11"/></svg><svg class="i-noface" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.5"/><path d="M7 25L25 7"/></svg><svg class="i-unsure" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.5"/><path d="M12.2 12.6c.3-2.2 1.9-3.4 3.9-3.4 2.2 0 3.8 1.3 3.8 3.2 0 2.5-3.8 2.8-3.8 5.6"/><path d="M16.1 22.2v.2"/></svg></span><span id="verdict"></span></p>
+        <p class="why" id="why"></p>
+
+        <div class="gauge" id="gauge" role="img" aria-label="Score gauge">
+          <div class="z z1"></div><div class="z z2"></div><div class="z z3"></div>
+          <div class="pin" id="pin"></div>
+          <div class="ring" id="ring"></div>
+        </div>
+        <div class="zlabels" id="zlabels"><span>Real</span><span>Inconclusive</span><span>AI-generated</span></div>
+        <div class="legend">
+          <span><b class="k1"></b>This image</span>
+          <span><b class="k2"></b>After JPEG compression</span>
+        </div>
+
+        <div class="facts">
+          <div class="crop">
+            <canvas id="crop" width="64" height="64"></canvas>
+            <small>What the model saw: the 64 x 64 crop it scored</small>
+          </div>
+          <dl id="facts"></dl>
+        </div>
+        <ul class="notes" id="notes"></ul>
+        <p class="caveat">The score is not a calibrated probability. The model learned from StyleGAN faces only, so a low score means "not a StyleGAN fake", not "proven real". Use it as a signal, not proof.</p>
+        <div class="actions"><button id="again" type="button">Scan another image</button><button id="showscore" type="button" class="ghost" hidden>Show the score anyway</button></div>
+      </div>
+
+      <div class="state s-err">
+        <h2>That scan didn't work</h2>
+        <p class="err" id="errmsg"></p>
+        <button id="again2" type="button">Try another image</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="reliab" aria-labelledby="rel-h">
+    <div>
+      <h2 id="rel-h">How far to trust it</h2>
+      <p>These numbers were measured on images the model did not train on, from a single training run.</p>
+      <table id="card"><tbody></tbody></table>
+      <p class="fine" id="cardfine"></p>
+    </div>
+    <div>
+      <h2>Where it falls short</h2>
+      <ul>
+        <li>It only knows StyleGAN faces. Images from other generators, especially diffusion models, may slip through.</li>
+        <li>It works on a 64 x 64 crop, so fine detail is lost.</li>
+        <li>It overfits its training set, which is why it flags about one in six real faces by mistake.</li>
+        <li>Social-media robustness was only tested for JPEG compression, not resizing, screenshots or filters.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const root = $('root'), frame = $('frame'), fileIn = $('file'), preview = $('preview');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MIN_SCAN_MS = reduceMotion ? 900 : 2800;
+let band = [0.35, 0.65], stepTimer = null, objectUrl = null;
+
+const pct = x => Math.round(x * 100);
+function setState(s, verdict = '') { root.dataset.state = s; root.dataset.verdict = verdict; }
+const WORDS = { fake: 'Likely AI', real: 'Likely real', inconclusive: 'Inconclusive', noface: 'No face found' };
+const SENT = { fake: 'AI-generated', real: 'real', inconclusive: 'inconclusive' };
+let last = null;
+
+/* ----- model status + reliability table ----- */
+async function loadStatus() {
+  const st = $('status'), banner = $('banner');
+  try {
+    const d = await (await fetch('/status')).json();
+    band = d.band;
+    const z = document.querySelectorAll('.gauge .z');
+    z[0].style.width = pct(band[0]) + '%';
+    z[1].style.width = pct(band[1] - band[0]) + '%';
+    z[2].style.width = pct(1 - band[1]) + '%';
+    const zl = $('zlabels').children;
+    zl[0].style.width = pct(band[0]) + '%';
+    zl[1].style.width = pct(band[1] - band[0]) + '%';
+    zl[2].style.width = pct(1 - band[1]) + '%';
+
+    if (d.demo) {
+      st.className = 'status demo'; st.lastElementChild.textContent = 'Demo mode';
+      banner.hidden = false;
+      banner.textContent = d.reason + ' Scores below are placeholders, not real predictions. Train the model first, then restart this app.';
+    } else {
+      st.className = 'status ok'; st.lastElementChild.textContent = 'Model loaded (' + d.device + ')' + (d.face_check ? '' : ', face check off');
+    }
+    const m = d.model_card;
+    const rows = [
+      ['Correct on clean images', (m.acc_clean * 100).toFixed(1) + '%', ''],
+      ['Correct after JPEG compression', (m.acc_jpeg30 * 100).toFixed(1) + '%', ''],
+      ['AI-generated faces caught', (m.fake_recall * 100).toFixed(1) + '%', ''],
+      ['Real faces wrongly flagged as AI', (m.real_false_alarm * 100).toFixed(1) + '%', 'bad']
+    ];
+    $('card').tBodies[0].innerHTML = rows.map(r => '<tr class="' + r[2] + '"><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('');
+    $('cardfine').textContent = 'Based on ' + m.n_valid.toLocaleString() + ' validation images (' + m.n_fake.toLocaleString() + ' AI-generated, ' + m.n_real.toLocaleString() + ' real). JPEG compression was quality 30. These figures use a simple 50% cut-off; the "inconclusive" zone is a display choice and was not measured separately.';
+    const extra = document.createElement('p'); extra.className = 'fine';
+    extra.textContent = 'The number of training rounds was chosen by looking at these same images, so treat the figures as slightly optimistic.';
+    $('cardfine').after(extra);
+  } catch (e) {
+    st.className = 'status'; st.lastElementChild.textContent = 'Server not reachable';
+    banner.hidden = false;
+    banner.textContent = 'This page could not reach the app server. Start it with "python app.py" and open http://127.0.0.1:8000.';
+  }
+}
+
+/* ----- scanning ----- */
+function runSteps() {
+  const items = [...document.querySelectorAll('#steps li')];
+  items.forEach(li => li.className = '');
+  let i = 0; items[0].className = 'on';
+  clearInterval(stepTimer);
+  stepTimer = setInterval(() => {
+    if (i < items.length - 1) { items[i].className = 'past'; i++; items[i].className = 'on'; }
+  }, MIN_SCAN_MS / 3);
+}
+
+async function analyze(file) {
+  if (!file || !file.type.startsWith('image/')) return fail('Choose an image file such as a JPG, PNG or WebP.');
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  preview.src = objectUrl;
+  $('fname').textContent = file.name || 'Pasted image';
+  $('phase').textContent = 'Scanning';
+  setState('scanning'); runSteps();
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const [res] = await Promise.all([
+      fetch('/analyze', { method: 'POST', body: fd }),
+      new Promise(r => setTimeout(r, MIN_SCAN_MS))
+    ]);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'The server returned an error.');
+    render(data);
+  } catch (e) {
+    fail(e instanceof TypeError ? 'Could not reach the app server. Check that python app.py is still running.' : e.message);
+  } finally { clearInterval(stepTimer); }
+}
+
+function fail(msg) { $('errmsg').textContent = msg; setState('error'); }
+
+function drawCrop(serverCrop) {
+  const im = new Image();
+  im.onload = () => {
+    const ctx = $('crop').getContext('2d');
+    if (serverCrop) { ctx.imageSmoothingEnabled = false; ctx.drawImage(im, 0, 0, 64, 64); return; }
+    const s = Math.min(im.naturalWidth, im.naturalHeight);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(im, (im.naturalWidth - s) / 2, (im.naturalHeight - s) / 2, s, s, 0, 0, 64, 64);
+  };
+  im.src = serverCrop || objectUrl;
+}
+
+function render(d, forceScore = false) {
+  last = d;
+  const faceProblem = d.face === 'none' || d.face === 'outside_crop';
+  const noface = faceProblem && !forceScore;      // true = hide the score, show only the face message
+  const shown = faceProblem ? 'noface' : d.verdict;
+  $('verdict').textContent = WORDS[shown];
+  $('showscore').hidden = !noface;
+  root.dataset.noface = noface ? '1' : '';
+  const score = pct(d.p_fake);
+  let why;
+  if (noface) why = d.face === 'none'
+    ? 'The face check found no face in this image, so an AI-or-real score would mean nothing here. Try a close-up, front-facing photo of one face.'
+    : 'The face check found a face, but not in the centre square the model looks at. Crop the image around the face and try again.';
+  else if (d.verdict === 'inconclusive') why = 'The model scored this ' + score + ' out of 100 for AI-generated, which is too close to call.';
+  else if (d.verdict === 'fake') why = 'The model scored this ' + score + ' out of 100 for AI-generated. It looks like the StyleGAN fakes the model learned from.';
+  else why = 'The model scored this ' + score + ' out of 100 for AI-generated. It looks like the real photos the model learned from, which is not proof that it is genuine.';
+  if (faceProblem && forceScore) why = 'Showing the score anyway. The model scored this ' + score + ' out of 100 for AI-generated, but the face check found no usable face. Ignore the score unless you know the image is a face.';
+  $('why').textContent = why;
+  $('gauge').setAttribute('aria-label', 'AI-generated score ' + score + ' out of 100; after JPEG compression ' + pct(d.p_fake_jpeg30));
+
+  const pin = $('pin'), ring = $('ring');
+  pin.style.left = ring.style.left = '50%';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const vis = x => Math.min(98.5, Math.max(1.5, x * 100));
+    pin.style.left = vis(d.p_fake) + '%';
+    ring.style.left = vis(d.p_fake_jpeg30) + '%';
+  }));
+
+  const after = pct(d.p_fake_jpeg30) + ' out of 100' + (d.stable_under_jpeg ? ', same verdict' : ', verdict changes to ' + SENT[d.verdict_jpeg30]);
+  const rows = [
+    ['Size', d.width + ' x ' + d.height + ' pixels'],
+    ['File', d.format + ', ' + d.size_kb + ' KB'],
+    ...(noface ? [] : [['After compression', after]])
+  ];
+  const dl = $('facts'); dl.textContent = '';
+  rows.forEach(([k, v]) => {
+    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = k; dd.textContent = v; dl.append(dt, dd);
+  });
+  const nl = $('notes'); nl.textContent = '';
+  d.notes.forEach(n => { const li = document.createElement('li'); li.textContent = n; nl.append(li); });
+
+  drawCrop(d.crop_png);
+  $('phase').textContent = 'Done';
+  if (d.demo) { $('banner').hidden = false; }
+  setState('done', shown);
+  if (!forceScore && window.matchMedia('(max-width:780px)').matches)
+    document.querySelector('.readout').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+}
+
+function reset() {
+  root.dataset.noface = '';
+  fileIn.value = '';
+  if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+  preview.removeAttribute('src');
+  setState('idle');
+}
+
+/* ----- input handling ----- */
+const busy = () => root.dataset.state === 'scanning';
+frame.addEventListener('click', () => { if (!busy()) fileIn.click(); });
+frame.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !busy()) { e.preventDefault(); fileIn.click(); } });
+fileIn.addEventListener('change', () => { if (fileIn.files[0]) analyze(fileIn.files[0]); });
+['dragenter', 'dragover'].forEach(ev => frame.addEventListener(ev, e => { e.preventDefault(); if (!busy()) frame.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => frame.addEventListener(ev, e => { e.preventDefault(); frame.classList.remove('drag'); }));
+frame.addEventListener('drop', e => { if (!busy() && e.dataTransfer.files[0]) analyze(e.dataTransfer.files[0]); });
+// stop the browser from opening a file that is dropped slightly outside the box
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item && !busy()) analyze(item.getAsFile());
+});
+$('again').addEventListener('click', reset);
+$('showscore').addEventListener('click', () => { if (last) render(last, true); });
+$('again2').addEventListener('click', reset);
+
+loadStatus();
+</script>
+</body>
+</html>

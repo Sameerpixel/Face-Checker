@@ -1,0 +1,6 @@
+# Install PyTorch separately first (see README), then:
+pillow
+fastapi
+uvicorn
+python-multipart
+opencv-python-headless<5
